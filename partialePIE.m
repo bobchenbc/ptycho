@@ -78,7 +78,7 @@ end
 mag = sqrt(Ie);
 
 Probe = Probe.*sqrt(maxPower/(M*N*sum(abs(Power(:).^2))));
-phi = repmat(Probe,[1,1,numModes])./numModes;
+probe = repmat(Probe,[1,1,numModes])./sqrt(numModes);
 psix = complex(zeros(M,N,numModes),0);
 po = complex(zeros(M,N,numModes),0);
 
@@ -103,29 +103,33 @@ step = 1;
 
 while omega > 1E-2
     err = 0;
-    for k=1:numpts
-        for n=1:numModes
-            indy = (1:M)+ypos(k);
-            indx = (1:N)+xpos(k);
-            po(:,:,n) = phi(:,:,n).*obs(indy,indx);
-            psix(:,:,n) = fft2(po(:,:,n));
+    for k=1:numModes
+        for j=1:numpts
+            indy = (1:M)+ypos(j);
+            indx = (1:N)+xpos(j);
+            po(:,:,k) = probe(:,:,k).*obs(indy,indx);
+            psix(:,:,k) = fft2(po(:,:,k));
         end
         % calculated magnitude
         magc = sqrt(sum(abs(psix).^2,3));
-        err = err + sum(sum((magc-mag(:,:,k)).^2))./Power(k);
+        err = err + sum(sum((magc-mag(:,:,j)).^2))./Power(j);
+        fprintf(1,'err=%g\n',err);
         magc(magc<threshold) = threshold;
         magc = mag(:,:,k)./magc;
         
         % for can be replaced with parfor
-        for n=1:numModes 
-            psix(:,:,n) = magc.*psix(:,:,n);%exp(1i*angle(psix(:,:,n)));
-            psix(:,:,n) = ifft2(psix(:,:,n));
-            df = psix(:,:,n) - po(:,:,n);
-            mx = max(max(abs(phi(:,:,n))));
-            obs(indy,indx) = obs(indy,indx) + conj(phi(:,:,n))./mx.^2.*df;
-            if step>updateProbeSteps
+        for k=1:numModes 
+            psix(:,:,k) = magc.*psix(:,:,k);%exp(1i*angle(psix(:,:,n)));
+            psix(:,:,k) = ifft2(psix(:,:,k));
+            df = psix(:,:,k) - po(:,:,k);
+            mx = max(max(abs(probe(:,:,k))));
+            obs(indy,indx) = obs(indy,indx) + conj(probe(:,:,k))./mx.^2.*df;
+        end
+        if step>updateProbeSteps
+            for k =1:numModes
+                df = psix(:,:,k) - probe(:,:,k).*obs(indy,indx);
                 mx = max(max(abs(obs(indy,indx))));
-                po(:,:,n) = po(:,:,n) + conj(obs(indy,indx))/mx.^2.*df;
+                po(:,:,k) = po(:,:,k) + conj(obs(indy,indx))/mx.^2.*df;
             end
         end
                 
