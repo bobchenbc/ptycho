@@ -33,7 +33,7 @@ end
 
 % threshold: the minimum value of the calculated magnitude. Any value 
 if ~exist('threshold','var')
-    threshold = 1E-5;
+    threshold = mymax(mag)*1E-4;
 end
 
 % updateProbeSteps: steps when probe begin to update
@@ -78,8 +78,8 @@ end
 mag = sqrt(Ie);
 magc = ones(size(mag));
 
-Probe = Probe.*sqrt(maxPower/(M*N*sum(abs(Power(:).^2))));
-probe = repmat(Probe,[1,1,numModes])./sqrt(numModes);
+Probe = Probe./sqrt(sum(abs(Probe(:).^2)));
+probe = repmat(Probe,[1,1,numModes])./numModes;
 psix = complex(zeros(M,N,numModes),0);
 po = complex(zeros(M,N,numModes),0);
 
@@ -105,9 +105,9 @@ step = 1;
 while omega > 1E-2
     err = 0;
     for j=1:numpts
+        indy = (1:M)+ypos(j);
+        indx = (1:N)+xpos(j);
         for k=1:numModes
-            indy = (1:M)+ypos(j);
-            indx = (1:N)+xpos(j);
             po(:,:,k) = probe(:,:,k).*obs(indy,indx);
             psix(:,:,k) = fft2(po(:,:,k));
         end
@@ -116,18 +116,19 @@ while omega > 1E-2
         err = err + sum(sum((magc(:,:,j)-mag(:,:,j)).^2))./Power(j);
         fprintf(1,'err=%g\n',err);
     end
+    err = err/numpts;
     fprintf(1,'err=%g\n',err);
-    magc(magc<threshold) = threshold;
     magc = mag./magc;
-
+    magc(isnan(magc)|isinf(magc))=0;
     % for can be replaced with parfor
-    for k=1:numModes 
-        for j =1:numpts
-            indy = (1:M)+ypos(j);
-            indx = (1:N)+xpos(j);
+    for j =1:numpts
+        indy = (1:M)+ypos(j);
+        indx = (1:N)+xpos(j);
+        for k=1:numModes 
             po(:,:,k) = probe(:,:,k).*obs(indy,indx);
             psix(:,:,k) = fft2(po(:,:,k));
-            psix(:,:,k) = magc.*psix(:,:,k);%exp(1i*angle(psix(:,:,n)));
+            %psix(:,:,k) = magc(:,:,j).*psix(:,:,k);
+            psix(:,:,k) = mag(:,:,j).*exp(1i*angle(psix(:,:,k)));
             psix(:,:,k) = ifft2(psix(:,:,k));
             df = psix(:,:,k) - po(:,:,k);
             mx = max(max(abs(probe(:,:,k))));
@@ -136,11 +137,13 @@ while omega > 1E-2
                 mx = max(max(abs(obs(indy,indx))));
                 po(:,:,k) = po(:,:,k) + conj(obs(indy,indx))/mx.^2.*df;
             end
+            obs=custom_constraint(obs,'forceunity');
 
         end
+        showmat(abs(obs));
+        drawnow;
     end
-end
 
-fprintf(1,'step=%03d, err=%.3f\n',step,err);
-step = step+1;
+    fprintf(1,'step=%03d, err=%.3f\n',step,err);
+    step = step+1;
 end
