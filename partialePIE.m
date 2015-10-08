@@ -76,6 +76,7 @@ for k=1:numpts
     Ie(:,:,k) = fftshift(Ie(:,:,k)); %#ok<SAGROW>
 end
 mag = sqrt(Ie);
+magc = ones(size(mag));
 
 Probe = Probe.*sqrt(maxPower/(M*N*sum(abs(Power(:).^2))));
 probe = repmat(Probe,[1,1,numModes])./sqrt(numModes);
@@ -103,38 +104,43 @@ step = 1;
 
 while omega > 1E-2
     err = 0;
-    for k=1:numModes
-        for j=1:numpts
+    for j=1:numpts
+        for k=1:numModes
             indy = (1:M)+ypos(j);
             indx = (1:N)+xpos(j);
             po(:,:,k) = probe(:,:,k).*obs(indy,indx);
             psix(:,:,k) = fft2(po(:,:,k));
         end
         % calculated magnitude
-        magc = sqrt(sum(abs(psix).^2,3));
-        err = err + sum(sum((magc-mag(:,:,j)).^2))./Power(j);
+        magc(:,:,j) = sqrt(sum(abs(psix).^2,3));
+        err = err + sum(sum((magc(:,:,j)-mag(:,:,j)).^2))./Power(j);
         fprintf(1,'err=%g\n',err);
-        magc(magc<threshold) = threshold;
-        magc = mag(:,:,k)./magc;
-        
-        % for can be replaced with parfor
-        for k=1:numModes 
+    end
+    fprintf(1,'err=%g\n',err);
+    magc(magc<threshold) = threshold;
+    magc = mag./magc;
+
+    % for can be replaced with parfor
+    for k=1:numModes 
+        for j =1:numpts
+            indy = (1:M)+ypos(j);
+            indx = (1:N)+xpos(j);
+            po(:,:,k) = probe(:,:,k).*obs(indy,indx);
+            psix(:,:,k) = fft2(po(:,:,k));
             psix(:,:,k) = magc.*psix(:,:,k);%exp(1i*angle(psix(:,:,n)));
             psix(:,:,k) = ifft2(psix(:,:,k));
             df = psix(:,:,k) - po(:,:,k);
             mx = max(max(abs(probe(:,:,k))));
             obs(indy,indx) = obs(indy,indx) + conj(probe(:,:,k))./mx.^2.*df;
-        end
-        if step>updateProbeSteps
-            for k =1:numModes
-                df = psix(:,:,k) - probe(:,:,k).*obs(indy,indx);
+            if step>updateProbeSteps
                 mx = max(max(abs(obs(indy,indx))));
                 po(:,:,k) = po(:,:,k) + conj(obs(indy,indx))/mx.^2.*df;
             end
+
         end
-                
     end
-    
-    fprintf(1,'step=%03d, err=%.3f\n',step,err);
-    step = step+1;
+end
+
+fprintf(1,'step=%03d, err=%.3f\n',step,err);
+step = step+1;
 end
