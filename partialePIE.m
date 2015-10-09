@@ -66,6 +66,14 @@ if ~exist('Probe','var')
     error('Please provide the initial probe function(Probe)');
 end
 
+if ~exist('dest','var')
+    error('Please provide the destination path(dest)');
+end
+
+if ~exist(dest,'dir')
+    mkdir(dest);
+end
+
 
 Power = sum(sum(Ie,1),2);
 Power = squeeze(Power);
@@ -81,10 +89,10 @@ magc = ones(size(mag));
 probe = zeros(M,N,numModes);
 mx = max(Probe(:));
 Probe = Probe./sqrt(sum(abs(Probe(:).^2)));
-%[V,D]=CalcModes(,del,M,Modes,Modes);
+Probe = fftshift(ifft2(fftshift(Probe)));
 for k = 1:numModes
-    probe(:,:,k) = Probe + mx*1E-2*rand(M,N);
-    probe = probe/sqrt(sum(abs(probe(:)).^2));
+    probe(:,:,k) = fftshift(fft2(fftshift(Probe.*V(:,:,k)*D(k))));
+    probe = probe/sqrt(sum(sum(abs(probe(:,:,k)).^2)));
 end
 
 probe = probe*(sum(abs(Probe(:)).^2)/sum(abs(probe(:)).^2));
@@ -106,14 +114,14 @@ ex = round(max(xpos)+relax/2);
 ey = round(max(ypos)+relax/2);
 
 if ~exist('obs','var')
-    obs = complex(rand(M+ey,N+ey),0);
+    obs = complex(ones(M+ey,N+ey),0);
 end
 
 
 omega = 1E3;
 step = 1;
 
-while omega > 1E-2
+while omega > 1E-2 && step<=TotalSteps
     err = 0;
     for j=1:numpts
         indy = (1:M)+ypos(j);
@@ -126,10 +134,15 @@ while omega > 1E-2
         magc(:,:,j) = sqrt(sum(abs(psix).^2,3));
         err = err + sum(sum((magc(:,:,j)-mag(:,:,j)).^2))./Power(j);
         %fprintf(1,'err=%g\n',err);
+        %end
 
-        magc(isnan(magc)|isinf(magc))=0;
         % for can be replaced with parfor
         for k=1:numModes 
+            %for j = 1:numpts
+            %indy = (1:M)+ypos(j);
+            %indx = (1:N)+xpos(j);
+            %po(:,:,k) = probe(:,:,k).*obs(indy,indx);
+            %psix(:,:,k) = fft2(po(:,:,k));
             psix(:,:,k) = mag(:,:,j).*(psix(:,:,k)./magc(:,:,j));
             %psix(:,:,k) = mag(:,:,j).*exp(1i*angle(psix(:,:,k)));
             psix(:,:,k) = ifft2(psix(:,:,k));
@@ -138,16 +151,37 @@ while omega > 1E-2
             obs(indy,indx) = obs(indy,indx) + conj(probe(:,:,k))./mx.^2.*df;
             if step>updateProbeSteps
                 mx = max(max(abs(obs(indy,indx))));
-                po(:,:,k) = po(:,:,k) + conj(obs(indy,indx))/mx.^2.*df;
+                probe(:,:,k) = probe(:,:,k) + conj(obs(indy,indx))/mx.^2.*df;
             end
 
         end
     end
 
     %obs=custom_constraint(obs,'forceunity');
-    showmat(angle(obs));
-    drawnow;
+    %showmat(angle(obs));
+    %drawnow;
     err = err/numpts;
     fprintf(1,'step=%03d, err=%.3f\n',step,err);
+    if mod(step, outputSteps) ==0
+        mag = abs(obs);
+        im = mat2img(mag,1);
+        imwrite(im,fullfile(dest,sprintf('mag_step_%04d.png',step)));
+        phs = angle(obs);
+        im = mat2img(phs,1);
+        imwrite(im,fullfile(dest,sprintf('phs_step_%04d.png',step)));
+
+    end
     step = step+1;
 end
+fullname = fullfile(dest,'result.h5');
+fprintf(1,'Writing /result/obs_real...');
+hdf5write(fullname,'/result/obs_real',real(obs));
+fprintf(1,'Done!\nWriting /result/obs_imag...');
+hdf5write(fullname,'/result/obs_imag',imag(obs),'WriteMode','append');
+fprintf(1,'Done!\nWriting /result/probe_real...');
+hdf5write(fullname,'/result/probe_real',real(probe),'WriteMode','append');
+fprintf(1,'Done!\nWriting /result/probe_imag...');
+hdf5write(fullname,'/result/probe_imag',imag(probe),'WriteMode','append');
+fprintf(1,'Done!\nWriting /result/error_metric...');
+hdf5write(fullname,'/result/error_metric',Err,'WriteMode','append');
+fprintf(1,'Done!\n');
