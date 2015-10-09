@@ -158,8 +158,8 @@ while omega > 1E-2 && step<=TotalSteps
     end
 
     %obs=custom_constraint(obs,'forceunity');
-    %showmat(angle(obs));
-    %drawnow;
+    showmat(angle(obs));
+    drawnow;
     err = err/numpts;
     fprintf(1,'step=%03d, err=%.3f\n',step,err);
     if mod(step, outputSteps) ==0

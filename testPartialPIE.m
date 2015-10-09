@@ -1,4 +1,4 @@
-numModes = 4;
+numModes = 3;
 outputSteps = 20;
 updateProbeSteps = 5;
 relax=0;
@@ -41,9 +41,10 @@ fprintf(1,'Lc= %E\n',Lc);
 fprintf(1,'Step= %E\n',Step);
 fprintf(1,'***************************************\n');
 
-data_src = sprintf('CDI/Scan%g/Lc%d/%s',Step*1E6,...
-    round(Lc*1E6),suffix);
-fullname = fullfile(PWD,data_src,'SimData.h5');
+% data_src = sprintf('CDI/Scan%g/Lc%d/%s',Step*1E6,...
+%     round(Lc*1E6),suffix);
+% fullname = fullfile(PWD,data_src,'SimData.h5');
+fullname = fullfile('/home/bchen/ASync019_scratch/BoChen/CDI/Scan2.5/Lc8/ideal/SimData.h5');
 Ie = hdf5read(fullname,'/data/intensity');
 Pos = hdf5read(fullname,'/data/position');
 Probe = hdf5read(fullname,'/data/probe_real')+...
