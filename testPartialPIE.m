@@ -1,16 +1,12 @@
-numModes = 3;
-outputSteps = 20;
-updateProbeSteps = 5;
-relax=0;
-threshold = 1E-5;
-dest = 'resulttest';
-src = './';
-z1 = 1E-3;
-E = 1400;
-lambda = 12.4E-7/E;
-del = 4E-8;
-Lc = 10E-6;
-TotalSteps = 30;
+params.numModes = 3;
+params.outputSteps = 20;
+params.updateProbeSteps = 5;
+params.relax=0;
+params.src = '/home/bchen/ASync019_scratch/BoChen/CDI/Scan2.5/Lc8/ideal/';
+params.del = 4E-8;
+params.Lc = 10E-6;
+params.TotalSteps = 30;
+PWD='/home/bchen/ASync019_scratch/BoChen';
 suffix='exp';
 
 %Pos = dlmread(fullfile(src,'Position.txt'));
@@ -29,22 +25,19 @@ if exist('Lc','var')
 else
     Lc = Inf;
 end
-PWD='/home/bchen/ASync019_scratch/BoChen';
 fprintf(1,'***************************************\n');
 fprintf(1,'** Reconstruction Ptychography **\n');
 fprintf(1,'***************************************\n');
 fprintf(1,'Parameters\n');
-fprintf(1,'del = %E\n',del);
-fprintf(1,'E = %d\n',E);
-fprintf(1,'z1 = %E\n',z1);
-fprintf(1,'Lc= %E\n',Lc);
-fprintf(1,'Step= %E\n',Step);
+fprintf(1,'params.del = %E\n',params.del);
+fprintf(1,'params.Lc= %E\n',params.Lc);
+fprintf(1,'params.Step= %E\n',Step);
 fprintf(1,'***************************************\n');
 
 % data_src = sprintf('CDI/Scan%g/Lc%d/%s',Step*1E6,...
 %     round(Lc*1E6),suffix);
 % fullname = fullfile(PWD,data_src,'SimData.h5');
-fullname = fullfile('/home/bchen/ASync019_scratch/BoChen/CDI/Scan2.5/Lc8/ideal/SimData.h5');
+fullname = fullfile(params.src,'SimData.h5');
 Ie = hdf5read(fullname,'/data/intensity');
 Pos = hdf5read(fullname,'/data/position');
 Probe = hdf5read(fullname,'/data/probe_real')+...
@@ -62,6 +55,6 @@ end
 if AID>=0
     recon = sprintf('%s/%03d',recon,AID);
 end
-dest = fullfile(data_src,recon);
-[V,D]=CalcModes(Lc,del,M,numModes,numModes);
-partialePIE;
+params.dest = fullfile(data_src,recon);
+
+results=partialPIE(params);

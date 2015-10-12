@@ -14,81 +14,73 @@ function results = partialPIE(params)
     % Pos
     % Ie
     % 
+    %
+    params = setDefault(params);
 
-
-
-
-
-    Power = sum(sum(Ie,1),2);
+    Power = sum(sum(params.Ie,1),2);
     Power = squeeze(Power);
     maxPower = max(Power);
-    [M,N,numpts] = size(Ie);
+    
+    [M,N,numpts] = size(params.Ie);
+    numModes = params.numModes;
+    xpos = params.xpos;
+    ypos = params.ypos;
+    obs = params.obs;
 
+
+    mag = sqrt(params.Ie);
     for k=1:numpts
-        Ie(:,:,k) = fftshift(Ie(:,:,k)); %#ok<SAGROW>
+        mag(:,:,k) = fftshift(mag(:,:,k)); 
     end
-    mag = sqrt(Ie);
-    magc = ones(size(mag));
 
     probe = zeros(M,N,numModes);
-    mx = max(Probe(:));
-    Probe = Probe./sqrt(sum(abs(Probe(:).^2)));
-    Probe = fftshift(ifft2(fftshift(Probe)));
+    mx = max(params.Probe(:));
+    params.Probe = params.Probe./sqrt(sum(abs(params.Probe(:).^2)));
+    params.Probe = fftshift(ifft2(fftshift(params.Probe)));
     for k = 1:numModes
-        probe(:,:,k) = fftshift(fft2(fftshift(Probe.*V(:,:,k)*D(k))));
+        probe(:,:,k) = fftshift(fft2(fftshift(params.Probe.*params.V(:,:,k)))));
         probe = probe/sqrt(sum(sum(abs(probe(:,:,k)).^2)));
     end
-
-    probe = probe*(sum(abs(Probe(:)).^2)/sum(abs(probe(:)).^2));
-
-
+    probe = probe*(sum(abs(params.Probe(:)).^2)/sum(abs(probe(:)).^2));
+    rmfield(params,{'xpos','ypos','obs','Probe'});
 
 
     %probe = repmat(Probe,[1,1,numModes])./numModes;
     psix = complex(zeros(M,N,numModes),0);
     po = complex(zeros(M,N,numModes),0);
 
-    xpos = xpos - min(xpos);
-    ypos = ypos - min(ypos);
+    err = 1E3;
+    Err = zeros(params.TotalSteps,1);
+    step = 1;
+    err = 0;
 
-
-    xpos = xpos + round(relax/2);
-    ypos = ypos + round(relax/2);
-    ex = round(max(xpos)+relax/2);
-    ey = round(max(ypos)+relax/2);
-
-    if ~isfield(params,'obs')
-        obs = complex(ones(M+ey,N+ey),0);
+    if params.GPU
+        probe = gdouble(probe);
+        psix = gdouble(psix);
+        po = gdouble(po);
+        obs = gdouble(obs);
+        err = gdouble(err);
+        Power = gdouble(Power);
     end
 
-
-    omega = 1E3;
-    step = 1;
-
-    while omega > 1E-2 && step<=TotalSteps
+    while err > 1E-2 && step<=params.TotalSteps
         err = 0;
         for j=1:numpts
             indy = (1:M)+ypos(j);
             indx = (1:N)+xpos(j);
+            % for can be replaced with parfor
             for k=1:numModes
                 po(:,:,k) = probe(:,:,k).*obs(indy,indx);
                 psix(:,:,k) = fft2(po(:,:,k));
             end
             % calculated magnitude
-            magc(:,:,j) = sqrt(sum(abs(psix).^2,3));
-            err = err + sum(sum((magc(:,:,j)-mag(:,:,j)).^2))./Power(j);
-            %fprintf(1,'err=%g\n',err);
-            %end
+            magc = sqrt(sum(abs(psix).^2,3));
+            err = err + sum(sum((magc-mag(:,:,j)).^2))./Power(j);
 
-            % for can be replaced with parfor
             for k=1:numModes 
-                %for j = 1:numpts
-                %indy = (1:M)+ypos(j);
-                %indx = (1:N)+xpos(j);
-                %po(:,:,k) = probe(:,:,k).*obs(indy,indx);
-                %psix(:,:,k) = fft2(po(:,:,k));
-                psix(:,:,k) = mag(:,:,j).*(psix(:,:,k)./magc(:,:,j));
-                %psix(:,:,k) = mag(:,:,j).*exp(1i*angle(psix(:,:,k)));
+                tmp = psix(:,:,k)./magc;
+                tmp(isnan(tmp)|isinf(tmp))=0;
+                psix(:,:,k) = mag(:,:,j).*tmp;
                 psix(:,:,k) = ifft2(psix(:,:,k));
                 df = psix(:,:,k) - po(:,:,k);
                 mx = max(max(abs(probe(:,:,k))));
@@ -102,22 +94,49 @@ function results = partialPIE(params)
         end
 
         %obs=custom_constraint(obs,'forceunity');
-        showmat(angle(obs));
-        drawnow;
+        if params.showFigure
+            if strcmp(class(obs),'gpuArray')
+                showmat(angle(gather(obs)));
+            else
+                showmat(angle(obs));
+            end
+            drawnow;
+        end
         err = err/numpts;
-        fprintf(1,'step=%03d, err=%.3f\n',step,err);
+        
+
+        if strcmp(class(obs),'gpuArray')
+            this_err = gather(err);
+        else
+            this_err=err;
+        end
+        Err(step) = this_err;
+        fprintf(1,'step=%03d, err=%.3f\n',step,this_err);
+
         if mod(step, outputSteps) ==0
-            mag = abs(obs);
+            if strcmp(class(obs),'gpuArray')
+                mag = gather(abs(obs));
+                phs = gather(angle(obs));
+            else
+                mag = abs(obs);
+                phs = angle(obs);
+            end
+
             im = mat2img(mag,1);
             imwrite(im,fullfile(dest,sprintf('mag_step_%04d.png',step)));
-            phs = angle(obs);
             im = mat2img(phs,1);
             imwrite(im,fullfile(dest,sprintf('phs_step_%04d.png',step)));
 
         end
         step = step+1;
     end
-    fullname = fullfile(dest,'result.h5');
+
+    results.obs = obs;
+    results.Err = Err;
+    results.probe = probe;
+    results.pos = [xpos,ypos];
+
+    fullname = fullfile(params.dest,'result.h5');
     fprintf(1,'Writing /result/obs_real...');
     hdf5write(fullname,'/result/obs_real',real(obs));
     fprintf(1,'Done!\nWriting /result/obs_imag...');
@@ -129,6 +148,7 @@ function results = partialPIE(params)
     fprintf(1,'Done!\nWriting /result/error_metric...');
     hdf5write(fullname,'/result/error_metric',Err,'WriteMode','append');
     fprintf(1,'Done!\n');
+end
 
 function params=setDefault(params)
 
@@ -142,10 +162,21 @@ function params=setDefault(params)
         params.outputSteps = 20;
     end
 
+    % total iteration steps
+    if ~isfield(params,'TotalSteps')
+        params.TotalSteps = 50;
+    end
+
+    if ~isfield(params,'method')
+        params.method = 'ePIE';
+    end
+
     % number of extra pixels in obs, it is useful in position correction
     if ~isfield(params,'relax')
         params.relax = 0;    
     end
+
+
 
     if ~isfield(params,'Ie')
         error('Please provide experimental diffraaction intensity(Ie)');
@@ -157,10 +188,22 @@ function params=setDefault(params)
         error('Please provide the initial probe function(Probe)');
     end
 
-    % threshold: the minimum value of the calculated magnitude. Any value 
-    if ~isfield(params,'threshold')
-        parmas.threshold = mean(Ie(:))*1E-2;
+    % initial guess of the coherence length
+    if ~isfield(params,'Lc') 
+        params.Lc = 10E-6;
     end
+
+    % pixel size in the sample plane
+    if ~isfield(params,'del')
+        error('Please provide pixel size in the sample plane(del)');
+    end
+    M = size(params.Ie,1);
+
+    [V,D]=CalcModes(params.Lc,params.del,M,params.numModes);
+    for k =1:length(D)
+        V(:,:,k) = V(:,:,k).*D(k);
+    end
+    params.V = V;
 
     % updateProbeSteps: steps when probe begin to update
     if ~isfield(params,'updateProbeSteps')
@@ -180,4 +223,20 @@ function params=setDefault(params)
         mkdir(params.dest);
     end
 
+     
+    if ~isfield(params,'obs')
+        params.xpos = params.xpos - min(params.xpos);
+        params.ypos = params.ypos - min(params.ypos);
+        params.xpos = params.xpos + round(params.relax/2);
+        params.ypos = params.ypos + round(params.relax/2);
+
+        ex = round(max(params.xpos)+params.relax/2);
+        ey = round(max(params.ypos)+params.relax/2);
+        switch params.initType
+            case 'flat'
+                params.obs = complex(ones(M+ey,N+ey),0);
+            otherwise
+                params.obs = complex(rand(M+ey,N+ey),0);
+        end
+    end
 end
