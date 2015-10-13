@@ -19,7 +19,6 @@ function results = partialPIE(params)
 
     Power = sum(sum(params.Ie,1),2);
     Power = squeeze(Power);
-    maxPower = max(Power);
     
     [M,N,numpts] = size(params.Ie);
     numModes = params.numModes;
@@ -34,15 +33,15 @@ function results = partialPIE(params)
     end
 
     probe = zeros(M,N,numModes);
-    mx = max(params.Probe(:));
+
     params.Probe = params.Probe./sqrt(sum(abs(params.Probe(:).^2)));
     params.Probe = fftshift(ifft2(fftshift(params.Probe)));
     for k = 1:numModes
-        probe(:,:,k) = fftshift(fft2(fftshift(params.Probe.*params.V(:,:,k)))));
+        probe(:,:,k) = fftshift(fft2(fftshift(params.Probe.*params.V(:,:,k))));
         probe = probe/sqrt(sum(sum(abs(probe(:,:,k)).^2)));
     end
     probe = probe*(sum(abs(params.Probe(:)).^2)/sum(abs(probe(:)).^2));
-    rmfield(params,{'xpos','ypos','obs','Probe'});
+    params=rmfield(params,{'xpos','ypos','obs','Probe','Ie'});
 
 
     %probe = repmat(Probe,[1,1,numModes])./numModes;
@@ -52,19 +51,19 @@ function results = partialPIE(params)
     err = 1E3;
     Err = zeros(params.TotalSteps,1);
     step = 1;
-    err = 0;
 
     if params.GPU
         probe = gdouble(probe);
         psix = gdouble(psix);
         po = gdouble(po);
         obs = gdouble(obs);
-        err = gdouble(err);
         Power = gdouble(Power);
     end
 
-    while err > 1E-2 && step<=params.TotalSteps
-        err = 0;
+    while step<=params.TotalSteps
+        if params.GPU
+            err = gdouble(0);
+        end
         for j=1:numpts
             indy = (1:M)+ypos(j);
             indx = (1:N)+xpos(j);
@@ -85,7 +84,7 @@ function results = partialPIE(params)
                 df = psix(:,:,k) - po(:,:,k);
                 mx = max(max(abs(probe(:,:,k))));
                 obs(indy,indx) = obs(indy,indx) + conj(probe(:,:,k))./mx.^2.*df;
-                if step>updateProbeSteps
+                if step>params.updateProbeSteps
                     mx = max(max(abs(obs(indy,indx))));
                     probe(:,:,k) = probe(:,:,k) + conj(obs(indy,indx))/mx.^2.*df;
                 end
@@ -95,7 +94,7 @@ function results = partialPIE(params)
 
         %obs=custom_constraint(obs,'forceunity');
         if params.showFigure
-            if strcmp(class(obs),'gpuArray')
+            if isa(obs,'gpuArray')
                 showmat(angle(gather(obs)));
             else
                 showmat(angle(obs));
@@ -105,7 +104,7 @@ function results = partialPIE(params)
         err = err/numpts;
         
 
-        if strcmp(class(obs),'gpuArray')
+        if isa(obs,'gpuArray')
             this_err = gather(err);
         else
             this_err=err;
@@ -113,40 +112,40 @@ function results = partialPIE(params)
         Err(step) = this_err;
         fprintf(1,'step=%03d, err=%.3f\n',step,this_err);
 
-        if mod(step, outputSteps) ==0
-            if strcmp(class(obs),'gpuArray')
-                mag = gather(abs(obs));
-                phs = gather(angle(obs));
+        if mod(step, params.outputSteps) ==0
+            if isa(obs,'gpuArray')
+                im_mag = gather(abs(obs));
+                im_phs = gather(angle(obs));
             else
-                mag = abs(obs);
-                phs = angle(obs);
+                im_mag = abs(obs);
+                im_phs = angle(obs);
             end
 
-            im = mat2img(mag,1);
-            imwrite(im,fullfile(dest,sprintf('mag_step_%04d.png',step)));
-            im = mat2img(phs,1);
-            imwrite(im,fullfile(dest,sprintf('phs_step_%04d.png',step)));
+            im = mat2img(im_mag,1);
+            imwrite(im,fullfile(params.dest,sprintf('mag_step_%04d.png',step)));
+            im = mat2img(im_phs,1);
+            imwrite(im,fullfile(params.dest,sprintf('phs_step_%04d.png',step)));
 
         end
         step = step+1;
     end
 
-    results.obs = obs;
-    results.Err = Err;
-    results.probe = probe;
-    results.pos = [xpos,ypos];
+    results.obs = gather(obs);
+    results.Err = gather(Err);
+    results.probe = gather(probe);
+    %results.pos = [xpos,ypos];
 
     fullname = fullfile(params.dest,'result.h5');
     fprintf(1,'Writing /result/obs_real...');
-    hdf5write(fullname,'/result/obs_real',real(obs));
+    hdf5write(fullname,'/result/obs_real',real(results.obs));
     fprintf(1,'Done!\nWriting /result/obs_imag...');
-    hdf5write(fullname,'/result/obs_imag',imag(obs),'WriteMode','append');
+    hdf5write(fullname,'/result/obs_imag',imag(results.obs),'WriteMode','append');
     fprintf(1,'Done!\nWriting /result/probe_real...');
-    hdf5write(fullname,'/result/probe_real',real(probe),'WriteMode','append');
+    hdf5write(fullname,'/result/probe_real',real(results.probe),'WriteMode','append');
     fprintf(1,'Done!\nWriting /result/probe_imag...');
-    hdf5write(fullname,'/result/probe_imag',imag(probe),'WriteMode','append');
+    hdf5write(fullname,'/result/probe_imag',imag(results.probe),'WriteMode','append');
     fprintf(1,'Done!\nWriting /result/error_metric...');
-    hdf5write(fullname,'/result/error_metric',Err,'WriteMode','append');
+    hdf5write(fullname,'/result/error_metric',results.Err,'WriteMode','append');
     fprintf(1,'Done!\n');
 end
 
@@ -197,7 +196,7 @@ function params=setDefault(params)
     if ~isfield(params,'del')
         error('Please provide pixel size in the sample plane(del)');
     end
-    M = size(params.Ie,1);
+    [M,N,~] = size(params.Ie);
 
     [V,D]=CalcModes(params.Lc,params.del,M,params.numModes);
     for k =1:length(D)
@@ -208,6 +207,10 @@ function params=setDefault(params)
     % updateProbeSteps: steps when probe begin to update
     if ~isfield(params,'updateProbeSteps')
         params.updateProbeSteps = 10;
+    end
+    
+    if ~isfield(params,'showFigure')
+        params.showFigure=false;
     end
 
     % dest: Destination folder to write results, default 'result[xxx]' 
@@ -222,7 +225,10 @@ function params=setDefault(params)
     if ~exist(params.dest,'dir')
         mkdir(params.dest);
     end
-
+    
+    if ~isfield(params,'initType')
+        params.initType= 'flat';
+    end
      
     if ~isfield(params,'obs')
         params.xpos = params.xpos - min(params.xpos);
@@ -234,9 +240,14 @@ function params=setDefault(params)
         ey = round(max(params.ypos)+params.relax/2);
         switch params.initType
             case 'flat'
-                params.obs = complex(ones(M+ey,N+ey),0);
+                params.obs = complex(ones(M+ey,N+ex),0);
             otherwise
-                params.obs = complex(rand(M+ey,N+ey),0);
+                params.obs = complex(rand(M+ey,N+ex),0);
         end
+    end
+
+    
+    if ~isfield(params,'GPU')
+        params.GPU=false;
     end
 end
