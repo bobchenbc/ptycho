@@ -1,0 +1,29 @@
+#!/bin/bash
+# Set your minimum acceptable walltime, format: day-hours:minutes:seconds
+#SBATCH --time=0-00:60:00
+
+# Set name of job shown in squeue
+#SBATCH --job-name RECON
+# Request CPU resources
+#SBATCH --ntasks=1
+#SBATCH --ntasks-per-node=1
+#SBATCH --cpus-per-task=1
+#SBATCH --gres=gpu:1
+#SBATCH --mem-per-cpu=16000
+# Set the file for output (stdout)
+#SBATCH --output=RECON-job-%A_%a.out
+
+# Set the file for error log (stderr)
+#SBATCH --error=RECON-job-%A_%a.err
+
+
+# Command to run a job
+module load matlab/r2015a
+AID=${SLURM_ARRAY_TASK_ID:-0}
+noiseLevel=${noiseLevel:-0}
+
+#matlab -r "addpath('/home/bchen/local/mcode');Lc=$Lc;Step=$Step;Curv=$Curv; AID=$AID;noiseLevel=$noiseLevel;recon_ePIE"
+matlab -r "addpath('/home/bchen/local/mcode');Lc=$Lc;Step=$Step; AID=$AID;noiseLevel=$noiseLevel;testPartialPIE"
+#matlab -r "addpath('/home/bchen/mcode'); h=$h;sampleNo=$sampleNo;recon_ePIE" 
+
+
