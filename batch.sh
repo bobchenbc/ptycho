@@ -20,12 +20,15 @@ case $param in
     ;;
     'recon'*)
     Step=3
-    noiseLevel=1
-
-    for Lc in 5 6 8 10 20; do
-        cmd="sbatch --export=Step=$Step,Lc=$Lc,noiseLevel=$noiseLevel slurm-recon"
-        echo $cmd
-        eval $cmd
+    # noiseLevel=1
+    for Step in 2 3; do
+        for noiseLevel in 1; do
+            for Lc in 5 6 8 10 20 Inf; do
+                cmd="sbatch --export=Step=$Step,Lc=$Lc,noiseLevel=$noiseLevel slurm-recon"
+                echo $cmd
+                eval $cmd
+            done
+        done
     done
 esac
 

@@ -27,6 +27,7 @@ if exist('Lc','var')
 else
     Lc = Inf;
 end
+params.Lc = Lc;
 
 if ~exist('noiseLevel','var')
     noiseLevel = 0;
@@ -63,7 +64,18 @@ end
 if AID>=0
     recon = sprintf('%s/%03d',recon,AID);
 end
+if AID==0
+    params.initType='flat';
+else
+    params.initType='rand';
+end
 params.dest = fullfile(params.src,recon);
 params.GPU=true;
 
 results=partialPIE(params);
+if AID==0
+    M = 325;
+    N = 314;
+    t1 = cropmat(results.obs,M,N);
+    writecplx2img(fullfile(params.dest,'final.png'),t1,true);
+end
