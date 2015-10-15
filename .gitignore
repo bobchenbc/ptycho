@@ -1,3 +1,7 @@
 *.mat
 *.txt
-results/
+*.jpg
+*.png
+RECON-job*
+*/
+

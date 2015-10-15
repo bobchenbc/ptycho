@@ -1,17 +1,15 @@
-numModes = 3;
-outputSteps = 20;
-updateProbeSteps = 5;
-relax=0;
-threshold = 1E-5;
-dest = 'resulttest';
-src = './';
-z1 = 1E-3;
-E = 1400;
-lambda = 12.4E-7/E;
-del = 4E-8;
-Lc = 10E-6;
-TotalSteps = 30;
+params.numModes = 3;
+params.outputSteps = 20;
+params.updateProbeSteps = 5;
+params.relax=0;
+%params.src = '/home/bchen/ASync019_scratch/BoChen/CDI/Scan2.5/Lc8/ideal/';
+params.del = 4E-8;
+params.Lc = 10E-6;
+params.TotalSteps = 100;
+PWD='/home/bchen/ASync019_scratch/BoChen';
 suffix='exp';
+%noiseLevel=1;
+%AID=0;
 
 %Pos = dlmread(fullfile(src,'Position.txt'));
 %load(fullfile(src,'PtychoData.mat'));
@@ -29,39 +27,55 @@ if exist('Lc','var')
 else
     Lc = Inf;
 end
-PWD='/home/bchen/ASync019_scratch/BoChen';
+params.Lc = Lc;
+
+if ~exist('noiseLevel','var')
+    noiseLevel = 0;
+end
+if ~exist('AID','var')
+    AID= -1;
+end
 fprintf(1,'***************************************\n');
 fprintf(1,'** Reconstruction Ptychography **\n');
 fprintf(1,'***************************************\n');
 fprintf(1,'Parameters\n');
-fprintf(1,'del = %E\n',del);
-fprintf(1,'E = %d\n',E);
-fprintf(1,'z1 = %E\n',z1);
-fprintf(1,'Lc= %E\n',Lc);
-fprintf(1,'Step= %E\n',Step);
+fprintf(1,'params.del = %E\n',params.del);
+fprintf(1,'params.Lc= %E\n',params.Lc);
+fprintf(1,'params.Step= %E\n',Step);
 fprintf(1,'***************************************\n');
 
-% data_src = sprintf('CDI/Scan%g/Lc%d/%s',Step*1E6,...
-%     round(Lc*1E6),suffix);
-% fullname = fullfile(PWD,data_src,'SimData.h5');
-fullname = fullfile('/home/bchen/ASync019_scratch/BoChen/CDI/Scan2.5/Lc8/ideal/SimData.h5');
-Ie = hdf5read(fullname,'/data/intensity');
+params.src = sprintf('/home/bchen/ASync019_scratch/BoChen/CDI/Scan%g/Lc%d/%s',Step*1E6,...
+    round(Lc*1E6),suffix);
+fullname = fullfile(params.src,'SimData.h5');
+params.Ie = hdf5read(fullname,'/data/intensity');
 Pos = hdf5read(fullname,'/data/position');
-Probe = hdf5read(fullname,'/data/probe_real')+...
+params.Probe = hdf5read(fullname,'/data/probe_real')+...
     1j*hdf5read(fullname,'/data/probe_imag');
-M = size(Probe,1);
-xpos = -Pos(:,1);
-ypos = -Pos(:,2);
+M = size(params.Probe,1);
+params.xpos = -Pos(:,1);
+params.ypos = -Pos(:,2);
 if noiseLevel<0 
     recon = 'ePIE_recon_partial';
 else
     recon=sprintf('ePIE_recon_Noise_%gpct_partial',noiseLevel);
-    Ie = Ie + noiseLevel/100*mean(Ie(:))*randn(size(Ie));
-    Ie(Ie<0) = 0;
+    params.Ie = params.Ie + noiseLevel/100*mean(params.Ie(:))*randn(size(params.Ie));
+    params.Ie(params.Ie<0) = 0;
 end
 if AID>=0
     recon = sprintf('%s/%03d',recon,AID);
 end
-dest = fullfile(data_src,recon);
-[V,D]=CalcModes(Lc,del,M,numModes,numModes);
-partialePIE;
+if AID==0
+    params.initType='flat';
+else
+    params.initType='rand';
+end
+params.dest = fullfile(params.src,recon);
+params.GPU=true;
+
+results=partialPIE(params);
+if AID==0
+    M = 325;
+    N = 314;
+    t1 = cropmat(results.obs,M,N);
+    writecplx2img(fullfile(params.dest,'final.png'),t1,true);
+end
